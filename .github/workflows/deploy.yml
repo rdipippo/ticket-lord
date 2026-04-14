@@ -1,0 +1,111 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [24.x]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: |
+          frontend/package-lock.json
+          backend/package-lock.json
+
+    # Install dependencies
+    - name: Install frontend dependencies
+      run: npm install --prefix frontend
+
+    - name: Install backend dependencies
+      run: npm install --prefix backend
+
+    # Build frontend
+    - name: Build frontend
+      run: npm run build --prefix frontend
+      continue-on-error: true
+      env:
+        VITE_BASE_PATH: /ticket-lord/
+
+    - name: Copy index.html to 404.html for SPA routing
+      run: cp frontend/dist/index.html frontend/dist/404.html
+
+    # Build backend (if applicable)
+    - name: Build backend
+      run: npm run build --prefix backend
+      continue-on-error: true
+
+    # Run tests
+    - name: Test frontend
+      run: npm test --prefix frontend -- --passWithNoTests
+      continue-on-error: true
+
+    - name: Test backend
+      run: npm test --prefix backend
+      continue-on-error: true
+
+    # Upload build artifacts
+    - name: Upload frontend build
+      uses: actions/upload-artifact@v4
+      with:
+        name: frontend-build
+        path: frontend/dist/
+
+    - name: Upload backend dist
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-build
+        path: backend/dist/
+        continue-on-error: true
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download frontend build
+      uses: actions/download-artifact@v4
+      with:
+        name: frontend-build
+        path: frontend/dist/
+
+    - name: Download backend build
+      uses: actions/download-artifact@v4
+      with:
+        name: backend-build
+        path: backend/dist/
+        continue-on-error: true
+
+    - name: Upload pages artifact
+      uses: actions/upload-pages-artifact@v4
+      with:
+        path: frontend/dist/
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

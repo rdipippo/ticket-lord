@@ -176,7 +176,7 @@ export default function EditEvent() {
 
         <div className={styles.formActions}>
           <Button variant="outline" onClick={() => navigate('/host')}>← Back to Dashboard</Button>
-          <Button as="a" href={`/events/${event.id}`} variant="secondary">View Public Page</Button>
+          <Button onClick={() => navigate(`/events/${event.id}`)} variant="secondary">View Public Page</Button>
         </div>
       </div>
     </div>

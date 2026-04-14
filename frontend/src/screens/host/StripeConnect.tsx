@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { paymentsApi } from '../../services/api';
 import Alert from '../../components/Alert';
 import Button from '../../components/Button';
@@ -7,7 +7,6 @@ import Spinner from '../../components/Spinner';
 import styles from './Host.module.css';
 
 export default function StripeConnect() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const isReturn = window.location.pathname.includes('stripe-return');

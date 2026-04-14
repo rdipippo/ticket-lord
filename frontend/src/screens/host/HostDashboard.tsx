@@ -29,9 +29,9 @@ export default function HostDashboard() {
       <div className="container">
         <div className={styles.header}>
           <h1 className={styles.title}>Host Dashboard</h1>
-          <Button as={Link} to="/host/events/new" leftIcon="+" aria-label="Create new event">
-            New Event
-          </Button>
+          <Link to="/host/events/new" aria-label="Create new event">
+            <Button leftIcon="+">New Event</Button>
+          </Link>
         </div>
 
         {/* Stats */}

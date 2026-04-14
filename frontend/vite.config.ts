@@ -8,8 +8,8 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, 'src') },
   },
   build: {
-    outDir: '../backend/dist',
-    emptyOutDir: true,
+    outDir: 'dist',
+    sourcemap: mode !== 'production',
   },
   server: {
     port: 3000,

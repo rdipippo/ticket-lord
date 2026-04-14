@@ -1,7 +1,6 @@
 import pool from '../config/database';
-import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
-export interface RefreshToken extends RowDataPacket {
+export interface RefreshToken {
   id: number;
   user_id: number;
   token_hash: string;
@@ -9,7 +8,7 @@ export interface RefreshToken extends RowDataPacket {
   created_at: Date;
 }
 
-export interface VerificationToken extends RowDataPacket {
+export interface VerificationToken {
   id: number;
   user_id: number;
   token_hash: string;
@@ -21,25 +20,25 @@ export interface VerificationToken extends RowDataPacket {
 export const TokenModel = {
   async createRefreshToken(userId: number, tokenHash: string, expiresAt: Date): Promise<void> {
     await pool.query(
-      'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
+      'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
       [userId, tokenHash, expiresAt]
     );
   },
 
   async findRefreshToken(tokenHash: string): Promise<RefreshToken | null> {
-    const [rows] = await pool.query<RefreshToken[]>(
-      'SELECT * FROM refresh_tokens WHERE token_hash = ? AND expires_at > NOW()',
+    const result = await pool.query<RefreshToken>(
+      'SELECT * FROM refresh_tokens WHERE token_hash = $1 AND expires_at > NOW()',
       [tokenHash]
     );
-    return rows[0] || null;
+    return result.rows[0] || null;
   },
 
   async deleteRefreshToken(tokenHash: string): Promise<void> {
-    await pool.query('DELETE FROM refresh_tokens WHERE token_hash = ?', [tokenHash]);
+    await pool.query('DELETE FROM refresh_tokens WHERE token_hash = $1', [tokenHash]);
   },
 
   async deleteAllUserRefreshTokens(userId: number): Promise<void> {
-    await pool.query('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
+    await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
   },
 
   async createVerificationToken(
@@ -49,7 +48,7 @@ export const TokenModel = {
     expiresAt: Date
   ): Promise<void> {
     await pool.query(
-      'INSERT INTO verification_tokens (user_id, token_hash, type, expires_at) VALUES (?, ?, ?, ?)',
+      'INSERT INTO verification_tokens (user_id, token_hash, type, expires_at) VALUES ($1, $2, $3, $4)',
       [userId, tokenHash, type, expiresAt]
     );
   },
@@ -58,15 +57,15 @@ export const TokenModel = {
     tokenHash: string,
     type: 'email_verification' | 'password_reset'
   ): Promise<VerificationToken | null> {
-    const [rows] = await pool.query<VerificationToken[]>(
-      'SELECT * FROM verification_tokens WHERE token_hash = ? AND type = ? AND expires_at > NOW()',
+    const result = await pool.query<VerificationToken>(
+      'SELECT * FROM verification_tokens WHERE token_hash = $1 AND type = $2 AND expires_at > NOW()',
       [tokenHash, type]
     );
-    return rows[0] || null;
+    return result.rows[0] || null;
   },
 
   async deleteVerificationToken(tokenHash: string): Promise<void> {
-    await pool.query('DELETE FROM verification_tokens WHERE token_hash = ?', [tokenHash]);
+    await pool.query('DELETE FROM verification_tokens WHERE token_hash = $1', [tokenHash]);
   },
 
   async cleanupExpiredTokens(): Promise<void> {

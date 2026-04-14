@@ -1,10 +1,9 @@
 import pool from '../config/database';
-import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
 export type EventStatus = 'draft' | 'published' | 'cancelled' | 'completed';
 export type EventCategory = 'music' | 'sports' | 'arts' | 'food' | 'business' | 'technology' | 'education' | 'other';
 
-export interface Event extends RowDataPacket {
+export interface Event {
   id: number;
   host_id: number;
   title: string;
@@ -50,31 +49,33 @@ export interface EventFilters {
 
 export const EventModel = {
   async findById(id: number): Promise<Event | null> {
-    const [rows] = await pool.query<Event[]>(
+    const result = await pool.query<Event>(
       `SELECT e.*, u.name as host_name, u.email as host_email,
         MIN(tt.price) as min_price, MAX(tt.price) as max_price,
         SUM(tt.quantity) as total_tickets, SUM(tt.quantity_sold) as tickets_sold
        FROM events e
        JOIN users u ON e.host_id = u.id
        LEFT JOIN ticket_types tt ON e.id = tt.event_id AND tt.deleted_at IS NULL
-       WHERE e.id = ?
-       GROUP BY e.id`,
+       WHERE e.id = $1
+       GROUP BY e.id, u.name, u.email`,
       [id]
     );
-    return rows[0] || null;
+    return result.rows[0] || null;
   },
 
   async findAll(filters: EventFilters = {}): Promise<{ events: Event[]; total: number }> {
-    const conditions: string[] = ['e.status = "published"'];
+    const conditions: string[] = ["e.status = 'published'"];
     const params: unknown[] = [];
+    let paramIndex = 1;
 
-    if (filters.category) { conditions.push('e.category = ?'); params.push(filters.category); }
-    if (filters.city) { conditions.push('e.city LIKE ?'); params.push(`%${filters.city}%`); }
-    if (filters.startDate) { conditions.push('e.start_date >= ?'); params.push(filters.startDate); }
-    if (filters.endDate) { conditions.push('e.end_date <= ?'); params.push(filters.endDate); }
+    if (filters.category) { conditions.push(`e.category = $${paramIndex++}`); params.push(filters.category); }
+    if (filters.city) { conditions.push(`e.city ILIKE $${paramIndex++}`); params.push(`%${filters.city}%`); }
+    if (filters.startDate) { conditions.push(`e.start_date >= $${paramIndex++}`); params.push(filters.startDate); }
+    if (filters.endDate) { conditions.push(`e.end_date <= $${paramIndex++}`); params.push(filters.endDate); }
     if (filters.search) {
-      conditions.push('(e.title LIKE ? OR e.description LIKE ? OR e.venue_name LIKE ?)');
+      conditions.push(`(e.title ILIKE $${paramIndex} OR e.description ILIKE $${paramIndex + 1} OR e.venue_name ILIKE $${paramIndex + 2})`);
       params.push(`%${filters.search}%`, `%${filters.search}%`, `%${filters.search}%`);
+      paramIndex += 3;
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -82,13 +83,13 @@ export const EventModel = {
     const limit = Math.min(filters.limit || 20, 100);
     const offset = (page - 1) * limit;
 
-    const [countRows] = await pool.query<RowDataPacket[]>(
-      `SELECT COUNT(DISTINCT e.id) as total FROM events e ${where}`,
+    const countResult = await pool.query<{ total: string }>(
+      `SELECT COUNT(DISTINCT e.id)::text as total FROM events e ${where}`,
       params
     );
-    const total = (countRows[0] as RowDataPacket).total as number;
+    const total = parseInt(countResult.rows[0].total, 10);
 
-    const [events] = await pool.query<Event[]>(
+    const eventsResult = await pool.query<Event>(
       `SELECT e.*, u.name as host_name,
         MIN(tt.price) as min_price, MAX(tt.price) as max_price,
         SUM(tt.quantity) as total_tickets, SUM(tt.quantity_sold) as tickets_sold
@@ -96,22 +97,23 @@ export const EventModel = {
        JOIN users u ON e.host_id = u.id
        LEFT JOIN ticket_types tt ON e.id = tt.event_id AND tt.deleted_at IS NULL
        ${where}
-       GROUP BY e.id
+       GROUP BY e.id, u.name
        ORDER BY e.start_date ASC
-       LIMIT ? OFFSET ?`,
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       [...params, limit, offset]
     );
 
-    return { events, total };
+    return { events: eventsResult.rows, total };
   },
 
   async findByHostId(hostId: number, filters: EventFilters = {}): Promise<Event[]> {
-    const conditions: string[] = ['e.host_id = ?'];
+    const conditions: string[] = ['e.host_id = $1'];
     const params: unknown[] = [hostId];
+    let paramIndex = 2;
 
-    if (filters.status) { conditions.push('e.status = ?'); params.push(filters.status); }
+    if (filters.status) { conditions.push(`e.status = $${paramIndex++}`); params.push(filters.status); }
 
-    const [events] = await pool.query<Event[]>(
+    const result = await pool.query<Event>(
       `SELECT e.*,
         MIN(tt.price) as min_price, MAX(tt.price) as max_price,
         SUM(tt.quantity) as total_tickets, SUM(tt.quantity_sold) as tickets_sold
@@ -122,7 +124,7 @@ export const EventModel = {
        ORDER BY e.created_at DESC`,
       params
     );
-    return events;
+    return result.rows;
   },
 
   async create(data: {
@@ -146,11 +148,12 @@ export const EventModel = {
     maxAttendees?: number;
     tags?: string;
   }): Promise<number> {
-    const [result] = await pool.query<ResultSetHeader>(
+    const result = await pool.query<{ id: number }>(
       `INSERT INTO events (host_id, title, description, category, venue_name, venue_address,
         city, state, country, latitude, longitude, start_date, end_date, image_url, status,
         is_online, online_url, max_attendees, tags)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       RETURNING id`,
       [
         data.hostId, data.title, data.description, data.category,
         data.venueName, data.venueAddress, data.city, data.state, data.country,
@@ -160,7 +163,7 @@ export const EventModel = {
         data.maxAttendees || null, data.tags || null,
       ]
     );
-    return result.insertId;
+    return result.rows[0].id;
   },
 
   async update(id: number, hostId: number, data: Partial<{
@@ -178,23 +181,24 @@ export const EventModel = {
     };
     const fields: string[] = [];
     const values: unknown[] = [];
+    let paramIndex = 1;
     for (const [key, col] of Object.entries(fieldMap)) {
-      if (key in data) { fields.push(`${col} = ?`); values.push((data as Record<string, unknown>)[key]); }
+      if (key in data) { fields.push(`${col} = $${paramIndex++}`); values.push((data as Record<string, unknown>)[key]); }
     }
     if (fields.length === 0) return false;
     values.push(id, hostId);
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE events SET ${fields.join(', ')} WHERE id = ? AND host_id = ?`,
+    const result = await pool.query(
+      `UPDATE events SET ${fields.join(', ')} WHERE id = $${paramIndex} AND host_id = $${paramIndex + 1}`,
       values
     );
-    return result.affectedRows > 0;
+    return (result.rowCount ?? 0) > 0;
   },
 
   async delete(id: number, hostId: number): Promise<boolean> {
-    const [result] = await pool.query<ResultSetHeader>(
-      'DELETE FROM events WHERE id = ? AND host_id = ? AND status = "draft"',
+    const result = await pool.query(
+      "DELETE FROM events WHERE id = $1 AND host_id = $2 AND status = 'draft'",
       [id, hostId]
     );
-    return result.affectedRows > 0;
+    return (result.rowCount ?? 0) > 0;
   },
 };

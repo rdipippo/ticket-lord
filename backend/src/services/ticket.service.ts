@@ -2,9 +2,7 @@ import QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
 import { TicketModel } from '../models/ticket.model';
 import { OrderModel } from '../models/order.model';
-import { TicketTypeModel } from '../models/ticketType.model';
 import pool from '../config/database';
-import { config } from '../config';
 
 export const TicketService = {
   generateTicketNumber(): string {
@@ -43,45 +41,38 @@ export const TicketService = {
   },
 
   async processOrderCompletion(orderId: number): Promise<void> {
-    const connection = await pool.getConnection();
+    const order = await OrderModel.findById(orderId);
+    if (!order) throw new Error('Order not found');
+    const items = await OrderModel.getItems(orderId);
+
+    const client = await pool.connect();
     try {
-      await connection.beginTransaction();
+      await client.query('BEGIN');
 
-      const order = await OrderModel.findById(orderId);
-      if (!order) throw new Error('Order not found');
-
-      const items = await OrderModel.getItems(orderId);
       for (const item of items) {
-        // Issue tickets for each order item
-        const ticketNumber = this.generateTicketNumber();
-        const qrCode = await this.generateQrCode(ticketNumber, order.event_id);
         for (let i = 0; i < item.quantity; i++) {
-          const tn = i === 0 ? ticketNumber : this.generateTicketNumber();
-          const qr = i === 0 ? qrCode : await this.generateQrCode(tn, order.event_id);
-          await TicketModel.create({
-            orderId,
-            orderItemId: item.id,
-            userId: order.user_id,
-            eventId: order.event_id,
-            ticketTypeId: item.ticket_type_id,
-            ticketNumber: tn,
-            qrCode: qr,
-          });
+          const ticketNumber = this.generateTicketNumber();
+          const qrCode = await this.generateQrCode(ticketNumber, order.event_id);
+          await client.query(
+            `INSERT INTO tickets (order_id, order_item_id, user_id, event_id, ticket_type_id,
+              ticket_number, qr_code, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'valid')`,
+            [orderId, item.id, order.user_id, order.event_id, item.ticket_type_id, ticketNumber, qrCode]
+          );
         }
-        // Update quantity sold
-        await connection.query(
-          'UPDATE ticket_types SET quantity_sold = quantity_sold + ? WHERE id = ?',
+        await client.query(
+          'UPDATE ticket_types SET quantity_sold = quantity_sold + $1 WHERE id = $2',
           [item.quantity, item.ticket_type_id]
         );
       }
 
-      await OrderModel.updateStatus(orderId, 'completed');
-      await connection.commit();
+      await client.query("UPDATE orders SET status = 'completed' WHERE id = $1", [orderId]);
+      await client.query('COMMIT');
     } catch (err) {
-      await connection.rollback();
+      await client.query('ROLLBACK');
       throw err;
     } finally {
-      connection.release();
+      client.release();
     }
   },
 

@@ -60,6 +60,11 @@ app.get('/api/health', (_req, res) => {
 // Serve uploaded event images
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// Serve compiled frontend in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../public')));
+}
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventsRoutes);
@@ -68,9 +73,13 @@ app.use('/api/tickets', ticketsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 
-// 404 handler
-app.use((_req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+// SPA fallback in production, 404 otherwise
+app.use((req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    res.sendFile(path.join(__dirname, '../public/index.html'));
+  } else {
+    res.status(404).json({ error: 'Route not found' });
+  }
 });
 
 // Global error handler

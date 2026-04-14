@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
+  build: {
+    outDir: '../backend/dist',
+    emptyOutDir: true,
+  },
   server: {
     port: 3000,
     proxy: {

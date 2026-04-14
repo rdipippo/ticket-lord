@@ -1,17 +1,9 @@
-import mysql from 'mysql2/promise';
+import { Pool } from 'pg';
 import { config } from './index';
 
-const pool = mysql.createPool({
-  host: config.db.host,
-  port: config.db.port,
-  user: config.db.user,
-  password: config.db.password,
-  database: config.db.database,
-  waitForConnections: config.db.waitForConnections,
-  connectionLimit: config.db.connectionLimit,
-  queueLimit: config.db.queueLimit,
-  timezone: '+00:00',
-  dateStrings: false,
+const pool = new Pool({
+  connectionString: config.db.connectionString,
+  ssl: { rejectUnauthorized: false },
 });
 
 export default pool;

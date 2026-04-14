@@ -5,14 +5,7 @@ export const config = {
   port: parseInt(process.env.PORT || '5001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   db: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '3306', 10),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'ticket_lord',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
+    connectionString: process.env.DATABASE_URL || '',
   },
   jwt: {
     secret: process.env.JWT_SECRET || 'fallback_secret_change_in_prod',

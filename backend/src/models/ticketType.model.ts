@@ -1,7 +1,6 @@
 import pool from '../config/database';
-import { ResultSetHeader, RowDataPacket } from 'mysql2';
 
-export interface TicketType extends RowDataPacket {
+export interface TicketType {
   id: number;
   event_id: number;
   name: string;
@@ -21,19 +20,19 @@ export interface TicketType extends RowDataPacket {
 
 export const TicketTypeModel = {
   async findByEventId(eventId: number): Promise<TicketType[]> {
-    const [rows] = await pool.query<TicketType[]>(
-      'SELECT * FROM ticket_types WHERE event_id = ? AND deleted_at IS NULL ORDER BY price ASC',
+    const result = await pool.query<TicketType>(
+      'SELECT * FROM ticket_types WHERE event_id = $1 AND deleted_at IS NULL ORDER BY price ASC',
       [eventId]
     );
-    return rows;
+    return result.rows;
   },
 
   async findById(id: number): Promise<TicketType | null> {
-    const [rows] = await pool.query<TicketType[]>(
-      'SELECT * FROM ticket_types WHERE id = ? AND deleted_at IS NULL',
+    const result = await pool.query<TicketType>(
+      'SELECT * FROM ticket_types WHERE id = $1 AND deleted_at IS NULL',
       [id]
     );
-    return rows[0] || null;
+    return result.rows[0] || null;
   },
 
   async create(data: {
@@ -48,10 +47,10 @@ export const TicketTypeModel = {
     minPerOrder?: number;
     isVisible?: boolean;
   }): Promise<number> {
-    const [result] = await pool.query<ResultSetHeader>(
+    const result = await pool.query<{ id: number }>(
       `INSERT INTO ticket_types (event_id, name, description, price, quantity,
         sale_start, sale_end, max_per_order, min_per_order, is_visible)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         data.eventId, data.name, data.description || null,
         data.price, data.quantity,
@@ -60,7 +59,7 @@ export const TicketTypeModel = {
         data.isVisible !== undefined ? data.isVisible : true,
       ]
     );
-    return result.insertId;
+    return result.rows[0].id;
   },
 
   async update(id: number, eventId: number, data: Partial<{
@@ -75,33 +74,31 @@ export const TicketTypeModel = {
     };
     const fields: string[] = [];
     const values: unknown[] = [];
+    let paramIndex = 1;
     for (const [key, col] of Object.entries(fieldMap)) {
-      if (key in data) { fields.push(`${col} = ?`); values.push((data as Record<string, unknown>)[key]); }
+      if (key in data) { fields.push(`${col} = $${paramIndex++}`); values.push((data as Record<string, unknown>)[key]); }
     }
     if (fields.length === 0) return false;
     values.push(id, eventId);
-    const [result] = await pool.query<ResultSetHeader>(
-      `UPDATE ticket_types SET ${fields.join(', ')} WHERE id = ? AND event_id = ?`,
+    const result = await pool.query(
+      `UPDATE ticket_types SET ${fields.join(', ')} WHERE id = $${paramIndex} AND event_id = $${paramIndex + 1}`,
       values
     );
-    return result.affectedRows > 0;
+    return (result.rowCount ?? 0) > 0;
   },
 
-  async incrementSold(id: number, quantity: number, connection?: mysql.PoolConnection): Promise<void> {
-    const db = connection || pool;
-    await db.query(
-      'UPDATE ticket_types SET quantity_sold = quantity_sold + ? WHERE id = ? AND (quantity - quantity_sold) >= ?',
+  async incrementSold(id: number, quantity: number): Promise<void> {
+    await pool.query(
+      'UPDATE ticket_types SET quantity_sold = quantity_sold + $1 WHERE id = $2 AND (quantity - quantity_sold) >= $3',
       [quantity, id, quantity]
     );
   },
 
   async softDelete(id: number, eventId: number): Promise<boolean> {
-    const [result] = await pool.query<ResultSetHeader>(
-      'UPDATE ticket_types SET deleted_at = NOW() WHERE id = ? AND event_id = ?',
+    const result = await pool.query(
+      'UPDATE ticket_types SET deleted_at = NOW() WHERE id = $1 AND event_id = $2',
       [id, eventId]
     );
-    return result.affectedRows > 0;
+    return (result.rowCount ?? 0) > 0;
   },
 };
-
-import mysql from 'mysql2/promise';
